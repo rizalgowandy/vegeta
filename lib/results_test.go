@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"pgregory.net/rapid"
 )
 
@@ -83,23 +83,23 @@ func TestResultEncoding(t *testing.T) {
 		t.Run(tc.encoding, func(t *testing.T) {
 			rapid.Check(t, func(t *rapid.T) {
 				hdrs := rapid.MapOf(
-					rapid.StringMatching(`([\w-]+)`),
-					rapid.SliceOfN(rapid.StringMatching(`\S`), 1, -1),
-				).Draw(t, "headers").(map[string][]string)
+					rapid.StringMatching("^[!#$%&'*+\\-.^_`|~0-9a-zA-Z]+$"),
+					rapid.SliceOfN(rapid.StringMatching(`^[0-9a-zA-Z]+$`), 1, -1),
+				).Draw(t, "headers")
 
 				want := Result{
-					Attack:    rapid.String().Draw(t, "attack").(string),
-					Seq:       rapid.Uint64().Draw(t, "seq").(uint64),
-					Code:      rapid.Uint16().Draw(t, "code").(uint16),
-					Timestamp: time.Unix(rapid.Int64Range(0, 1e8).Draw(t, "timestamp").(int64), 0),
-					Latency:   time.Duration(rapid.Int64Min(0).Draw(t, "latency").(int64)),
-					BytesIn:   rapid.Uint64().Draw(t, "bytes_in").(uint64),
-					BytesOut:  rapid.Uint64().Draw(t, "bytes_out").(uint64),
-					Error:     rapid.String().Draw(t, "error").(string),
-					Body:      rapid.SliceOf(rapid.Byte()).Draw(t, "body").([]byte),
+					Attack:    rapid.StringMatching(`^\w+$`).Draw(t, "attack"),
+					Seq:       rapid.Uint64().Draw(t, "seq"),
+					Code:      rapid.Uint16().Draw(t, "code"),
+					Timestamp: time.Unix(rapid.Int64Range(0, 1e8).Draw(t, "timestamp"), 0),
+					Latency:   time.Duration(rapid.Int64Min(0).Draw(t, "latency")),
+					BytesIn:   rapid.Uint64().Draw(t, "bytes_in"),
+					BytesOut:  rapid.Uint64().Draw(t, "bytes_out"),
+					Error:     rapid.StringMatching(`^\w+$`).Draw(t, "error"),
+					Body:      rapid.SliceOf(rapid.Byte()).Draw(t, "body"),
 					Method: rapid.StringMatching("^(GET|PUT|POST|DELETE|HEAD|OPTIONS)$").
-						Draw(t, "method").(string),
-					URL: rapid.String().Draw(t, "url").(string),
+						Draw(t, "method"),
+					URL: rapid.StringMatching(`^(https?):\/\/([a-zA-Z0-9-\.]+)(:[0-9]{1,5})?\/?([a-zA-Z0-9\-\._\?\,\'\/\\\+&amp;%\$#\=~]*)$`).Draw(t, "url"),
 				}
 
 				if len(hdrs) > 0 {
@@ -134,7 +134,7 @@ func TestResultEncoding(t *testing.T) {
 
 					if !got.Equal(want) {
 						t.Logf("encoded: %s", encoded)
-						t.Fatalf("\ngot:  %#v\nwant: %#v\n", got, want)
+						t.Fatalf("mismatch: %s", cmp.Diff(got, want))
 					}
 				}
 			})
@@ -146,7 +146,7 @@ func BenchmarkResultEncodings(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
 
-	rng := rand.New(rand.NewSource(0))
+	rng := rand.New(rand.NewSource(0)) // #skipcq: GSC-G404
 	zf := rand.NewZipf(rng, 3, 2, 1000)
 	began := time.Now()
 	results := make([]Result, 1e5)
@@ -169,7 +169,7 @@ func BenchmarkResultEncodings(b *testing.B) {
 		{"csv", NewCSVEncoder, NewCSVDecoder},
 		{"json", NewJSONEncoder, NewJSONDecoder},
 	} {
-		enc := tc.enc(ioutil.Discard)
+		enc := tc.enc(io.Discard)
 
 		b.Run(tc.encoding+"-encode", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {

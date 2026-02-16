@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"reflect"
@@ -17,7 +16,7 @@ import (
 func TestTargetRequest(t *testing.T) {
 	t.Parallel()
 
-	body, err := ioutil.ReadAll(io.LimitReader(rand.Reader, 1024*512))
+	body, err := io.ReadAll(io.LimitReader(rand.Reader, 1024*512))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,13 +34,46 @@ func TestTargetRequest(t *testing.T) {
 	}
 	req, _ := tgt.Request()
 
-	reqBody, err := ioutil.ReadAll(req.Body)
+	reqBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if !bytes.Equal(tgt.Body, reqBody) {
 		t.Fatalf("Target body wasn't copied correctly")
+	}
+
+	tgt.Header.Set("X-Stuff", "0")
+	if req.Header.Get("X-Stuff") == "0" {
+		t.Error("Each Target must have its own Header")
+	}
+
+	want, got := tgt.Header.Get("Host"), req.Header.Get("Host")
+	if want != got {
+		t.Fatalf("Target Header wasn't copied correctly. Want: %s, Got: %s", want, got)
+	}
+	if req.Host != want {
+		t.Fatalf("Target Host wasn't copied correctly. Want: %s, Got: %s", want, req.Host)
+	}
+}
+
+func TestTargetRequest_EmptyBody(t *testing.T) {
+	t.Parallel()
+
+	tgt := Target{
+		Method: "GET",
+		URL:    "http://:9999/",
+		Body:   []byte{},
+		Header: http.Header{
+			"X-Some-Header":       []string{"1"},
+			"X-Some-Other-Header": []string{"2"},
+			"X-Some-New-Header":   []string{"3"},
+			"Host":                []string{"lolcathost"},
+		},
+	}
+	req, _ := tgt.Request()
+	if req.Body != nil {
+		t.Fatal("Body should be nil")
 	}
 
 	tgt.Header.Set("X-Stuff", "0")
@@ -281,7 +313,7 @@ func TestNewHTTPTargeter(t *testing.T) {
 		}
 	}
 
-	bodyf, err := ioutil.TempFile("", "vegeta-")
+	bodyf, err := os.CreateTemp("", "vegeta-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +404,7 @@ func TestNewHTTPTargeter(t *testing.T) {
 			Body:   []byte{},
 			Header: http.Header{"Content-Type": []string{"text/plain"}},
 		},
-		{ // Preceeding comment is ignored and target is parsed correctly.
+		{ // Preceding comment is ignored and target is parsed correctly.
 			Method: "GET",
 			URL:    "http://:6060/",
 			Body:   []byte{},

@@ -1,28 +1,45 @@
 module github.com/tsenart/vegeta/v12
 
-go 1.13
+go 1.22
 
 require (
-	github.com/alecthomas/jsonschema v0.0.0-20180308105923-f2c93856175a
-	github.com/bmizerany/perks v0.0.0-20141205001514-d9a9656a3a4b
-	github.com/c2h5oh/datasize v0.0.0-20171227191756-4eba002a5eae
-	github.com/dgryski/go-gk v0.0.0-20140819190930-201884a44051
-	github.com/dgryski/go-lttb v0.0.0-20180810165845-318fcdf10a77
-	github.com/gonum/blas v0.0.0-20181208220705-f22b278b28ac // indirect
-	github.com/gonum/diff v0.0.0-20181124234638-500114f11e71 // indirect
-	github.com/gonum/floats v0.0.0-20181209220543-c233463c7e82 // indirect
-	github.com/gonum/integrate v0.0.0-20181209220457-a422b5c0fdf2 // indirect
-	github.com/gonum/internal v0.0.0-20181124074243-f884aa714029 // indirect
-	github.com/gonum/lapack v0.0.0-20181123203213-e4cdc5a0bff9 // indirect
-	github.com/gonum/mathext v0.0.0-20181121095525-8a4bf007ea55 // indirect
-	github.com/gonum/matrix v0.0.0-20181209220409-c518dec07be9 // indirect
-	github.com/gonum/stat v0.0.0-20181125101827-41a0da705a5b // indirect
-	github.com/google/go-cmp v0.2.0
-	github.com/influxdata/tdigest v0.0.0-20180711151920-a7d76c6f093a
-	github.com/mailru/easyjson v0.7.0
-	github.com/miekg/dns v1.1.17
+	github.com/alecthomas/jsonschema v0.0.0-20220216202328-9eeeec9d044b
+	github.com/bmizerany/perks v0.0.0-20230307044200-03f9df79da1e
+	github.com/c2h5oh/datasize v0.0.0-20231215233829-aa82cc1e6500
+	github.com/dgryski/go-gk v0.0.0-20200319235926-a69029f61654
+	github.com/dgryski/go-lttb v0.0.0-20230207170358-f8fc36cdbff1
+	github.com/google/go-cmp v0.6.0
+	github.com/influxdata/tdigest v0.0.1
+	github.com/mailru/easyjson v0.7.7
+	github.com/miekg/dns v1.1.61
+	github.com/prometheus/client_golang v1.19.1
+	github.com/prometheus/prometheus v0.53.1
+	github.com/rs/dnscache v0.0.0-20230804202142-fc85eb664529
 	github.com/streadway/quantile v0.0.0-20220407130108-4246515d968d
-	github.com/tsenart/go-tsz v0.0.0-20180814232043-cdeb9e1e981e
-	golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297
-	pgregory.net/rapid v0.3.3
+	github.com/tsenart/go-tsz v0.0.0-20180814235614-0bd30b3df1c3
+	golang.org/x/net v0.27.0
+	pgregory.net/rapid v1.1.0
+)
+
+require (
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc // indirect
+	github.com/iancoleman/orderedmap v0.3.0 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/prometheus/client_model v0.6.1 // indirect
+	github.com/prometheus/common v0.55.0 // indirect
+	github.com/prometheus/procfs v0.15.1 // indirect
+	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
+	golang.org/x/mod v0.19.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/tools v0.23.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 )

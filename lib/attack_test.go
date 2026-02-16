@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +15,11 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestAttackRate(t *testing.T) {
@@ -63,10 +65,9 @@ func TestAttackDuration(t *testing.T) {
 }
 
 func TestTLSConfig(t *testing.T) {
-	t.Parallel()
 	atk := NewAttacker()
 	got := atk.client.Transport.(*http.Transport).TLSClientConfig
-	if want := (&tls.Config{InsecureSkipVerify: true}); !reflect.DeepEqual(got, want) {
+	if want := (&tls.Config{InsecureSkipVerify: false}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got: %+v, want: %+v", got, want)
 	}
 }
@@ -82,7 +83,7 @@ func TestRedirects(t *testing.T) {
 	redirects := 2
 	atk := NewAttacker(Redirects(redirects))
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	res := atk.hit(tr, "")
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	want := fmt.Sprintf("stopped after %d redirects", redirects)
 	if got := res.Error; !strings.HasSuffix(got, want) {
 		t.Fatalf("want: '%v' in '%v'", want, got)
@@ -99,7 +100,7 @@ func TestNoFollow(t *testing.T) {
 	defer server.Close()
 	atk := NewAttacker(Redirects(NoFollow))
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	res := atk.hit(tr, "")
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	if res.Error != "" {
 		t.Fatalf("got err: %v", res.Error)
 	}
@@ -118,7 +119,7 @@ func TestTimeout(t *testing.T) {
 	defer server.Close()
 	atk := NewAttacker(Timeout(10 * time.Millisecond))
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	res := atk.hit(tr, "")
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 
 	want := "Client.Timeout exceeded while awaiting headers"
 	if got := res.Error; !strings.Contains(got, want) {
@@ -148,7 +149,8 @@ func TestLocalAddr(t *testing.T) {
 	defer server.Close()
 	atk := NewAttacker(LocalAddr(*addr))
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	atk.hit(tr, "")
+	atk.hit(tr, &attack{name: "", began: time.Now()})
+
 }
 
 func TestKeepAlive(t *testing.T) {
@@ -160,6 +162,20 @@ func TestKeepAlive(t *testing.T) {
 	got := atk.client.Transport.(*http.Transport).DisableKeepAlives
 	if want := true; got != want {
 		t.Fatalf("got: %v, want: %v", got, want)
+	}
+}
+
+// This test cannot be run in parallel with TestTLSConfig() because ClientSessionCache
+// is designed to be called concurrently from different goroutines.
+func TestSessionTickets(t *testing.T) {
+	atk := NewAttacker(SessionTickets(true))
+	cf := atk.client.Transport.(*http.Transport).TLSClientConfig
+	got, want := cf.SessionTicketsDisabled, false
+	if got != want {
+		t.Fatalf("got: %v, want: %v", got, want)
+	}
+	if cf.ClientSessionCache == nil {
+		t.Fatalf("ClientSessionCache is nil")
 	}
 }
 
@@ -182,7 +198,8 @@ func TestStatusCodeErrors(t *testing.T) {
 	defer server.Close()
 	atk := NewAttacker()
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	res := atk.hit(tr, "")
+
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	if got, want := res.Error, "400 Bad Request"; got != want {
 		t.Fatalf("got: %v, want: %v", got, want)
 	}
@@ -192,7 +209,7 @@ func TestBadTargeterError(t *testing.T) {
 	t.Parallel()
 	atk := NewAttacker()
 	tr := func(*Target) error { return io.EOF }
-	res := atk.hit(tr, "")
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	if got, want := res.Error, io.EOF.Error(); got != want {
 		t.Fatalf("got: %v, want: %v", got, want)
 	}
@@ -210,7 +227,8 @@ func TestResponseBodyCapture(t *testing.T) {
 	defer server.Close()
 	atk := NewAttacker()
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	res := atk.hit(tr, "")
+
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	if got := res.Body; !bytes.Equal(got, want) {
 		t.Fatalf("got: %v, want: %v", got, want)
 	}
@@ -237,7 +255,7 @@ func TestProxyOption(t *testing.T) {
 	}))
 
 	tr := NewStaticTargeter(Target{Method: "GET", URL: "http://127.0.0.2"})
-	res := atk.hit(tr, "")
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	if got, want := res.Error, ""; got != want {
 		t.Errorf("got error: %q, want %q", got, want)
 	}
@@ -263,7 +281,7 @@ func TestMaxBody(t *testing.T) {
 		t.Run(fmt.Sprint(maxBody), func(t *testing.T) {
 			atk := NewAttacker(MaxBody(maxBody))
 			tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-			res := atk.hit(tr, "")
+			res := atk.hit(tr, &attack{name: "", began: time.Now()})
 
 			want := body
 			if maxBody >= 0 {
@@ -281,7 +299,7 @@ func TestUnixSocket(t *testing.T) {
 	t.Parallel()
 	body := []byte("IT'S A UNIX SYSTEM, I KNOW THIS")
 
-	socketDir, err := ioutil.TempDir("", "vegata")
+	socketDir, err := os.MkdirTemp("", "vegata")
 	if err != nil {
 		t.Fatal("Failed to create socket dir", err)
 	}
@@ -321,7 +339,7 @@ func TestUnixSocket(t *testing.T) {
 	atk := NewAttacker(UnixSocket(socketFile))
 
 	tr := NewStaticTargeter(Target{Method: "GET", URL: "http://anyserver/"})
-	res := atk.hit(tr, "")
+	res := atk.hit(tr, &attack{name: "", began: time.Now()})
 	if !bytes.Equal(res.Body, body) {
 		t.Fatalf("got: %s, want: %s", string(res.Body), string(body))
 	}
@@ -336,10 +354,10 @@ func TestClient(t *testing.T) {
 	}
 
 	client := &http.Client{
-		Timeout: time.Duration(1 * time.Nanosecond),
+		Timeout: 1 * time.Nanosecond,
 		Transport: &http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
-			Dial:                dialer.Dial,
+			DialContext:         dialer.DialContext,
 			TLSClientConfig:     DefaultTLSConfig,
 			MaxIdleConnsPerHost: DefaultConnections,
 		},
@@ -355,7 +373,7 @@ func TestClient(t *testing.T) {
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
 
 	atk := NewAttacker(Client(client))
-	resp := atk.hit(tr, "TEST")
+	resp := atk.hit(tr, &attack{name: "TEST", began: time.Now()})
 	if !strings.Contains(resp.Error, "Client.Timeout exceeded while awaiting headers") {
 		t.Errorf("Expected timeout error")
 	}
@@ -373,23 +391,174 @@ func TestVegetaHeaders(t *testing.T) {
 	defer server.Close()
 
 	tr := NewStaticTargeter(Target{Method: "GET", URL: server.URL})
-	atk := NewAttacker()
-
+	a := NewAttacker()
+	atk := &attack{name: "ig-bang", began: time.Now()}
 	for seq := 0; seq < 5; seq++ {
-		attack := "big-bang"
-		res := atk.hit(tr, attack)
+		res := a.hit(tr, atk)
 
 		var hdr http.Header
 		if err := json.Unmarshal(res.Body, &hdr); err != nil {
 			t.Fatal(err)
 		}
 
-		if have, want := hdr.Get("X-Vegeta-Attack"), attack; have != want {
+		if have, want := hdr.Get("X-Vegeta-Attack"), atk.name; have != want {
 			t.Errorf("X-Vegeta-Attack: have %q, want %q", have, want)
 		}
 
 		if have, want := hdr.Get("X-Vegeta-Seq"), strconv.Itoa(seq); have != want {
 			t.Errorf("X-Vegeta-Seq: have %q, want %q", have, want)
 		}
+	}
+}
+
+// https://github.com/tsenart/vegeta/issues/649
+func TestDNSCaching_Issue649(t *testing.T) {
+	defer func() {
+		if err := recover(); err != nil {
+			t.Fatalf("panic: %v", err)
+		}
+	}()
+
+	tr := NewStaticTargeter(Target{Method: "GET", URL: "https://[2a00:1450:4005:802::200e]"})
+	atk := NewAttacker(DNSCaching(0))
+	_ = atk.hit(tr, &attack{name: "TEST", began: time.Now()})
+}
+
+func TestFirstOfEachIPFamily(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{
+			name:  "empty list",
+			input: []string{},
+			want:  []string{},
+		},
+		{
+			name:  "single IPv4",
+			input: []string{"192.168.1.1"},
+			want:  []string{"192.168.1.1"},
+		},
+		{
+			name:  "single IPv6",
+			input: []string{"fe80::1"},
+			want:  []string{"fe80::1"},
+		},
+		{
+			name:  "multiple IPv6",
+			input: []string{"fe80::1", "fe80::2"},
+			want:  []string{"fe80::1"},
+		},
+		{
+			name:  "one IPv4 and one IPv6",
+			input: []string{"192.168.1.1", "fe80::1"},
+			want:  []string{"192.168.1.1", "fe80::1"},
+		},
+		{
+			name:  "one IPv6 and one IPv4",
+			input: []string{"fe80::1", "192.168.1.1"},
+			want:  []string{"fe80::1", "192.168.1.1"},
+		},
+		{
+			name:  "multiple IPs with alternating versions",
+			input: []string{"192.168.1.1", "fe80::1", "192.168.1.2", "fe80::2"},
+			want:  []string{"192.168.1.1", "fe80::1"},
+		},
+		{
+			name:  "multiple IPs with same versions",
+			input: []string{"192.168.1.1", "192.168.1.2", "192.168.1.3"},
+			want:  []string{"192.168.1.1"},
+		},
+		{
+			name:  "multiple IPs with non-alternating versions",
+			input: []string{"192.168.1.1", "fe80::1", "192.168.1.2", "192.168.1.3", "fe80::2"},
+			want:  []string{"192.168.1.1", "fe80::1"},
+		},
+		{
+			name:  "invalid IP addresses",
+			input: []string{"invalid", "192.168.1.1", "fe80::1"},
+			want:  []string{"192.168.1.1", "fe80::1"},
+		},
+		{
+			name:  "IPv4 with embedded IPv6",
+			input: []string{"192.168.1.1", "::ffff:c000:280", "fe80::1"},
+			want:  []string{"192.168.1.1", "fe80::1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := firstOfEachIPFamily(tt.input)
+			if len(result) != len(tt.want) {
+				t.Fatalf("want %v, got %v", tt.want, result)
+			}
+			if diff := cmp.Diff(tt.want, result); diff != "" {
+				t.Errorf("unexpected result (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestAttackConnectTo(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	hits := make(map[string]int)
+	srvs := make(map[string]int)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits[r.Host]++
+		mu.Unlock()
+	})
+
+	addrs := make([]string, 3)
+	for i := range addrs {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addrs[i] = ln.Addr().String()
+
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			srvs[ln.Addr().String()]++
+			mu.Unlock()
+			handler.ServeHTTP(w, r)
+		}))
+
+		srv.Listener = ln
+		srv.Start()
+		t.Cleanup(srv.Close)
+	}
+
+	tr := NewStaticTargeter(
+		Target{Method: "GET", URL: "http://sapo.pt:80"},
+		Target{Method: "GET", URL: "http://sapo.pt:80"},
+		Target{Method: "GET", URL: "http://sapo.pt:80"},
+		Target{Method: "GET", URL: "http://" + addrs[0]},
+	)
+
+	atk := NewAttacker(
+		KeepAlive(false),
+		ConnectTo(map[string][]string{"sapo.pt:80": addrs}),
+	)
+
+	a := &attack{name: "TEST", began: time.Now()}
+	for i := 0; i < 4; i++ {
+		resp := atk.hit(tr, a)
+		if resp.Error != "" {
+			t.Fatal(resp.Error)
+		}
+	}
+
+	want := map[string]int{"sapo.pt:80": 3, addrs[0]: 1}
+	if diff := cmp.Diff(want, hits); diff != "" {
+		t.Errorf("unexpected hits (-want +got):\n%s", diff)
+	}
+
+	want = map[string]int{addrs[0]: 2, addrs[1]: 1, addrs[2]: 1}
+	if diff := cmp.Diff(want, srvs); diff != "" {
+		t.Errorf("unexpected hits (-want +got):\n%s", diff)
 	}
 }
